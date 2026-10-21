@@ -1,0 +1,67 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.4'
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+      - name: Run backend quality gate
+        run: .venv/bin/python scripts/check.py
+      - name: Build distribution
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: dist
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-dist
+          path: dist
+      - name: Package release artifact
+        run: tar -czf "backend-${GITHUB_REF_NAME}.tar.gz" -C dist .
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" "backend-${GITHUB_REF_NAME}.tar.gz"
+          --title "Backend $GITHUB_REF_NAME"
+          --notes "Generated from the Shonchoy monorepo. See MIRROR.json for source provenance."
+      - name: Trigger optional deployment hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$DEPLOY_HOOK_URL" ]; then
+            curl -fsS -X POST -H 'Content-Type: application/json' \
+              -d "{\"component\":\"backend\",\"version\":\"${GITHUB_REF_NAME}\"}" \
+              "$DEPLOY_HOOK_URL"
+          else
+            echo "DEPLOY_HOOK_URL is not configured; release artifact only."
+          fi

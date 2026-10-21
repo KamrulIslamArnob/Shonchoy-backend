@@ -1,0 +1,39 @@
+# Agent Context: Shonchoy Backend
+
+This document sets the system context, constraints, and operational protocols for AI agents working in `shonchoy-backend`.
+
+## 1. Safety & Financial Invariants
+
+1. **Integer Representation of Money**:
+   - Currency amounts must be stored and processed as integers representing minor currency units (e.g., paisa for BDT, cents for USD). Never use floating-point types for currency in database columns or calculations.
+2. **Double-Entry Balance Guarantees**:
+   - Every transaction transfer must preserve balance equality between source and destination accounts.
+   - Cash outflows and inflows must be recorded with directional signs and validated against account type restrictions.
+3. **No Direct Mutation from AI Advisor**:
+   - The AI advisor (`fintrack_advisor`) is strictly prohibited from invoking mutating database functions directly.
+   - Advisor recommendations that involve creating budgets, adjusting limits, or logging transactions must be formatted as proposals for the user to approve through the frontend.
+4. **Zero Check-in of Credentials**:
+   - Never commit `.env` or database connection strings containing live credentials.
+   - Use dummy fallback strings in tests and local development.
+
+## 2. Verification Protocol
+
+Before finishing any task in this section, verify:
+1. `uv lock --check` (Dependency lockfile integrity)
+2. `.venv/bin/python -m ruff check .` (Linter)
+3. `.venv/bin/python -m ruff format --check .` (Formatter)
+4. `.venv/bin/python -m mypy` (Type checker)
+5. `.venv/bin/python -m pytest` (Unit & integration test suite)
+6. `.venv/bin/python -m bandit -r src alembic -q` (Static security analysis)
+7. Or simply run `.venv/bin/python scripts/check.py`, which executes all the above.
+
+## 3. Directory Layout
+
+- `src/fintrack_core/`: Core financial REST API, domain models, and Neon Postgres persistence.
+- `src/fintrack_advisor/`: LangGraph intelligent advisor runtime and isolated tools.
+- `src/fintrack_common/`: Shared API models, exceptions, and serialization helpers.
+- `alembic/`: Database migration scripts for Neon Postgres.
+- `scripts/`: Operational tools (`check.py`, `init_local.py`, `connect_neon.py`, `export_openapi.py`).
+- `tests/`: Automated unit and integration tests.
+
+For command shortcuts, see [CLAUDE.md](CLAUDE.md). For schema and API architecture, see [DESIGN.md](DESIGN.md).

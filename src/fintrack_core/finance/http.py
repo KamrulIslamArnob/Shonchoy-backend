@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from fintrack_common.api import Result, envelope
 from fintrack_core.database import session
 from fintrack_core.finance.domain import Data, DomainError
+from fintrack_core.finance.persistence import SqlUnitOfWork
 from fintrack_core.finance.ports import Reader, Repositories, UnitOfWork
 
 
@@ -20,7 +21,10 @@ def unit_of_work(
     if not request.app.state.core_capacity.acquire(timeout=2):
         raise HTTPException(503, "Core API is busy. Retry later with the same command key.")
     try:
-        yield request.app.state.core_uow_factory(db)
+        key = request.app.state.settings.command_fingerprint_key
+        if key is None:
+            raise HTTPException(503, "Private workspace commands are not configured.")
+        yield SqlUnitOfWork(db, key.get_secret_value(), UUID(request.state.core_scope_id))
     except DomainError as error:
         raise HTTPException(error.status, error.detail) from None
     finally:

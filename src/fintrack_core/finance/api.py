@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
+from fintrack_core.auth import authenticated_access
 from fintrack_core.finance.transport import (
     accounts,
     budgets,
@@ -12,9 +13,8 @@ from fintrack_core.finance.transport import (
     reports,
     rules,
 )
-from fintrack_core.routes import dev_access
 
-router = APIRouter(prefix="/v1/core", dependencies=[Depends(dev_access)])
+router = APIRouter(prefix="/v1/core", dependencies=[Depends(authenticated_access)])
 router.include_router(profile.router)
 router.include_router(accounts.router)
 router.include_router(catalog.router)

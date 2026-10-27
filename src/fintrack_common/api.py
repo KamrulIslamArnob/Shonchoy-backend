@@ -162,11 +162,19 @@ def make_app(title: str, origins: list[str] | None = None) -> FastAPI:
             CORSMiddleware,
             allow_origins=origins,
             allow_credentials=False,
-            allow_methods=["GET", "POST", "PATCH", "PUT"],
-            allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+            allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "If-Match",
+                "X-FinTrack-Client",
+                "X-Neon-Session-Id",
+            ],
             expose_headers=["X-Request-Id"],
         )
 
+    @app.get("/health", tags=["health"], include_in_schema=False)
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:
         return {"status": "ok"}

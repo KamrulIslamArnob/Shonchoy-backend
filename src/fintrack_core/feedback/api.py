@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from fintrack_common.api import Page, Result, require_dev_key
+from fintrack_core.auth import authenticated_access
 from fintrack_core.database import session
 from fintrack_core.feedback.schemas import (
     FeedbackCategoryCreate,
@@ -25,7 +26,8 @@ from fintrack_core.feedback.service import FeedbackService
 from fintrack_core.finance.domain import Data, DomainError
 from fintrack_core.finance.http import Key as CommandKey
 from fintrack_core.finance.http import Limit, result
-from fintrack_core.routes import bearer, dev_access
+from fintrack_core.finance.persistence import DEV_SCOPE
+from fintrack_core.routes import bearer
 
 
 def admin_access(
@@ -47,8 +49,9 @@ def service(
     if not request.app.state.core_capacity.acquire(timeout=2):
         raise HTTPException(503, "Feedback is busy. Retry with the same command key.")
     try:
-        token = request.app.state.settings.dev_api_key
-        yield FeedbackService(db, token.get_secret_value() if token else "", actor)
+        token = request.app.state.settings.command_fingerprint_key
+        scope = UUID(getattr(request.state, "core_scope_id", str(DEV_SCOPE)))
+        yield FeedbackService(db, token.get_secret_value() if token else "", actor, scope=scope)
     except DomainError as error:
         raise HTTPException(error.status, error.detail) from None
     finally:
@@ -65,7 +68,7 @@ def version(value: Annotated[str | None, Header(alias="If-Match")] = None) -> in
 
 Service = Annotated[FeedbackService, Depends(service)]
 public_router = APIRouter(
-    prefix="/v1/core/feedback", dependencies=[Depends(dev_access)], tags=["feedback"]
+    prefix="/v1/core/feedback", dependencies=[Depends(authenticated_access)], tags=["feedback"]
 )
 admin_router = APIRouter(
     prefix="/v1/admin/feedback", dependencies=[Depends(admin_access)], tags=["feedback admin"]

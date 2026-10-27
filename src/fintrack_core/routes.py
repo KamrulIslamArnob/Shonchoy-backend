@@ -18,6 +18,8 @@ def dev_access(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> None:
+    if not request.app.state.settings.enable_development_routes:
+        raise HTTPException(404, "Resource not found.")
     require_dev_key(
         request.app.state.settings.dev_api_key, credentials.credentials if credentials else None
     )

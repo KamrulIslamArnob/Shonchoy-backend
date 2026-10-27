@@ -126,6 +126,7 @@ class SqlRepository:
 class SqlUnitOfWork:
     def __init__(self, db: Session, fingerprint_key: str, scope: UUID = DEV_SCOPE) -> None:
         self.db, self.scope = db, scope
+        db.info["workspace_scope"] = str(scope)
         self.fingerprint_key = fingerprint_key.encode()
         self.repositories = Repositories(
             *[

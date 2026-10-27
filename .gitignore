@@ -1,9 +1,26 @@
+# Python caches, virtualenvs, and test artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Local configuration and credentials
 .env
 .env.*
 !.env.example
 !.env.advisor.example
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
+.neon
+*.local
+*.pem
+*.key
+
+# Local test output and coverage
+.coverage
+htmlcov/
+*.log
+.local/

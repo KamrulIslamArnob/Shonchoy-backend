@@ -2,6 +2,17 @@
 
 This document sets the system context, constraints, and operational protocols for AI agents working in `shonchoy-backend`.
 
+> [!IMPORTANT]
+> **Complete Setup & Architecture Guide**: Read the comprehensive **[Workspace Setup & Architecture Guide](docs/WORKSPACE_SETUP_AND_ARCHITECTURE_GUIDE.md)** before making any code or migration changes.
+
+## Database: production branch only
+
+- Use exactly one Neon database branch: `production` (`br-billowing-star-b4ih39ph`) in project `FinTrack_DB` (`winter-surf-88756036`), database `neondb`.
+- Backend financial data and the mobile app's managed authentication must use this same production branch. Keep their authentication configuration synchronized.
+- Do not create or recreate development, staging, preview, or temporary Neon branches, including for migrations or tests. Use local disposable databases for isolated tests; never run disposable-database cleanup against production.
+- Before live database work, verify the project and branch IDs. Use the restricted runtime role for application access and the direct migration connection for migrations; keep credentials private.
+- The former `fintrack-backend-dev` and `shonchoy-mobile-auth-dev` branches were consolidated into production and deleted with user confirmation on 2026-10-27.
+
 ## 1. Safety & Financial Invariants
 
 1. **Integer Representation of Money**:
@@ -37,3 +48,4 @@ Before finishing any task in this section, verify:
 - `tests/`: Automated unit and integration tests.
 
 For command shortcuts, see [CLAUDE.md](CLAUDE.md). For schema and API architecture, see [DESIGN.md](DESIGN.md).
+

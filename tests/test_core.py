@@ -29,8 +29,13 @@ def test_auth_denies(client, headers):
 def test_missing_config_is_unavailable():
     with TestClient(create_app(Settings(_env_file=None))) as client:
         assert client.get("/health/live").status_code == 200
-        assert client.get("/v1/accounts").status_code == 503
-    with TestClient(create_app(Settings(_env_file=None, dev_api_key=SecretStr(TOKEN)))) as client:
+        assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/v1/accounts").status_code == 404
+    with TestClient(
+        create_app(
+            Settings(_env_file=None, dev_api_key=SecretStr(TOKEN), enable_development_routes=True)
+        )
+    ) as client:
         assert client.get("/v1/health/ready", headers=AUTH).status_code == 503
         assert client.get("/v1/accounts", headers=AUTH).status_code == 503
 

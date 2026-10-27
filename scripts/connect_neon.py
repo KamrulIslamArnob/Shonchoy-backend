@@ -10,7 +10,7 @@ from dotenv import dotenv_values
 from fintrack_core.database import postgres_url
 
 PROJECT = "winter-surf-88756036"
-BRANCH = "br-calm-truth-b4ghgt7x"
+BRANCH = "br-billowing-star-b4ih39ph"  # The single production branch for auth and finance.
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--replace-database-urls", action="store_true")
 args = parser.parse_args()
@@ -25,6 +25,9 @@ for name, pooled in [("FINTRACK_DATABASE_URL", True), ("FINTRACK_MIGRATION_DATAB
     command = ["npx", "--yes", "neon@8.8.0", "connection-string", BRANCH, "--project-id", PROJECT]
     if pooled:
         command.append("--pooled")
+        command.extend(["--role-name", "shonchoy_runtime"])
+    else:
+        command.extend(["--role-name", "neondb_owner"])
     result = subprocess.run(command, capture_output=True, text=True, timeout=30)
     if result.returncode:
         raise SystemExit(
@@ -32,6 +35,8 @@ for name, pooled in [("FINTRACK_DATABASE_URL", True), ("FINTRACK_MIGRATION_DATAB
         )
     raw = result.stdout.strip()
     postgres_url(raw)
+    if not pooled:
+        raw = raw.replace("-pooler.", ".")
     updates[name] = raw
 if updates:
     # URL characters are data. Dotenv single quotes safely preserve them without interpolation.

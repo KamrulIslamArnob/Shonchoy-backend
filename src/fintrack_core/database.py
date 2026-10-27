@@ -8,6 +8,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 
+@event.listens_for(Session, "after_begin")
+def workspace_context(db: Session, transaction: object, connection: Connection) -> None:
+    if connection.dialect.name == "postgresql":
+        # Transaction-local and parameterized: no scope survives pooled connection reuse.
+        from sqlalchemy import text
+
+        connection.execute(
+            text("SELECT set_config('app.workspace_id', :scope, true)"),
+            {"scope": db.info.get("workspace_scope", "")},
+        )
+
+
 def postgres_url(raw: str) -> URL:
     try:
         url = make_url(raw)
@@ -39,8 +51,7 @@ def build_engine(raw: str) -> Engine:
     return engine
 
 
-def session(request: Request) -> Iterator[Session]:
-    engine = request.app.state.engine
+def database_session(engine: Engine | None) -> Iterator[Session]:
     if engine is None:
         raise HTTPException(503, "Database is not configured.")
     with Session(engine, expire_on_commit=False) as db:
@@ -49,3 +60,11 @@ def session(request: Request) -> Iterator[Session]:
         except SQLAlchemyError:
             db.rollback()
             raise HTTPException(503, "Database operation is unavailable.") from None
+
+
+def session(request: Request) -> Iterator[Session]:
+    yield from database_session(request.app.state.engine)
+
+
+def auth_session(request: Request) -> Iterator[Session]:
+    yield from database_session(request.app.state.auth_engine)

@@ -31,12 +31,19 @@ from fintrack_core.finance.persistence import DEV_SCOPE, SqlUnitOfWork
 
 
 class FeedbackService:
-    def __init__(self, db: Session, fingerprint_key: str, actor: str = "development-admin") -> None:
+    def __init__(
+        self,
+        db: Session,
+        fingerprint_key: str,
+        actor: str = "development-admin",
+        *,
+        scope: UUID = DEV_SCOPE,
+    ) -> None:
         self.db = db
-        self.scope = DEV_SCOPE
+        self.scope = scope
         # Existing development mode has one server-owned synthetic subject, not real identity.
-        self.subject = f"development:{self.scope}"
-        self.uow = SqlUnitOfWork(db, fingerprint_key)
+        self.subject = f"workspace:{self.scope}"
+        self.uow = SqlUnitOfWork(db, fingerprint_key, scope)
         self.actor = actor
 
     def _categories(self, feature: str | None = None) -> list[FeedbackCategory]:

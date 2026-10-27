@@ -21,7 +21,7 @@ def workspace_snapshot(request: Request, uow: Uow) -> Result[Data]:
             profiles[0]
             if profiles
             else {
-                "id": request.app.state.core_scope_id,
+                "id": request.state.core_scope_id,
                 "version": 1,
                 "name": "Development user",
                 "currency": "BDT",
@@ -58,7 +58,7 @@ def bootstrap(request: Request) -> Result[Data]:
             "api_version": "core-v1",
             "policy_version": "dev-v1",
             "currencies": s.currency_registry(),
-            "identity": "single server-owned development workspace",
+            "identity": "authenticated private workspace",
             "features": [
                 "accounts",
                 "transactions",
@@ -80,7 +80,7 @@ def me(request: Request, uow: Uow) -> Result[Data]:
             rows[0]
             if rows
             else {
-                "id": request.app.state.core_scope_id,
+                "id": request.state.core_scope_id,
                 "version": 1,
                 "name": "Development user",
                 "currency": "BDT",
@@ -104,7 +104,7 @@ def profile(request: Request, body: s.ProfileEdit, uow: Uow, key: Key) -> Result
         "profile.update",
         data,
         lambda r: r.profile.save(
-            request.app.state.core_scope_id,
+            request.state.core_scope_id,
             body.expected_version,
             {k: v for k, v in data.items() if k != "expected_version"},
         ),
@@ -116,7 +116,7 @@ def preferences(request: Request, body: s.PreferencesEdit, uow: Uow, key: Key) -
     data = body.model_dump(mode="json", exclude_unset=True)
 
     def update(r: Repositories) -> Data:
-        current = r.profile.get(request.app.state.core_scope_id)
+        current = r.profile.get(request.state.core_scope_id)
         changes = {k: v for k, v in data.items() if k != "expected_version"}
         return r.profile.save(
             current["id"],

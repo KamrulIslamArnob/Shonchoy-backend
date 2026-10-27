@@ -31,6 +31,18 @@ class Workspace(Base):
     preferences: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class AppUser(Base):
+    __tablename__ = "core_users"
+    __table_args__ = (UniqueConstraint("auth_issuer", "auth_subject"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    auth_issuer: Mapped[str] = mapped_column(String(500))
+    auth_subject: Mapped[str] = mapped_column(String(255))
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("core_workspaces.id"), unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
 class Row(Base):
     __abstract__ = True
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -75,6 +87,7 @@ class Observation(Row):
 
 class Group(Row):
     __tablename__ = "core_category_groups"
+    __table_args__ = (UniqueConstraint("id", "scope_id"),)
     name: Mapped[str] = mapped_column(String(120))
     color: Mapped[str] = mapped_column(String(7), default="#718096")
     archived: Mapped[bool] = mapped_column(default=False)
@@ -82,6 +95,12 @@ class Group(Row):
 
 class Category(Row):
     __tablename__ = "core_categories"
+    __table_args__ = (
+        UniqueConstraint("id", "scope_id"),
+        ForeignKeyConstraint(
+            ["group_id", "scope_id"], ["core_category_groups.id", "core_category_groups.scope_id"]
+        ),
+    )
     name: Mapped[str] = mapped_column(String(120))
     kind: Mapped[str] = mapped_column(String(16))
     group_id: Mapped[UUID | None] = mapped_column(ForeignKey("core_category_groups.id"))
@@ -93,6 +112,9 @@ class Category(Row):
 class Transaction(Row):
     __tablename__ = "core_transactions"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["category_id", "scope_id"], ["core_categories.id", "core_categories.scope_id"]
+        ),
         ForeignKeyConstraint(
             ["account_id", "scope_id"], ["core_accounts.id", "core_accounts.scope_id"]
         ),
@@ -121,6 +143,14 @@ class Transaction(Row):
 
 class Rule(Row):
     __tablename__ = "core_rules"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["account_id", "scope_id"], ["core_accounts.id", "core_accounts.scope_id"]
+        ),
+        ForeignKeyConstraint(
+            ["set_category_id", "scope_id"], ["core_categories.id", "core_categories.scope_id"]
+        ),
+    )
     merchant_contains: Mapped[str | None] = mapped_column(String(120))
     min_amount_minor: Mapped[int | None] = mapped_column(BigInteger)
     max_amount_minor: Mapped[int | None] = mapped_column(BigInteger)
@@ -145,6 +175,11 @@ class Budget(Row):
 
 class Recurring(Row):
     __tablename__ = "core_recurring"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["account_id", "scope_id"], ["core_accounts.id", "core_accounts.scope_id"]
+        ),
+    )
     account_id: Mapped[UUID] = mapped_column(ForeignKey("core_accounts.id"))
     name: Mapped[str] = mapped_column(String(240))
     amount_minor: Mapped[int] = mapped_column(BigInteger)
@@ -167,12 +202,18 @@ class Idempotency(Base):
 
 class Audit(Row):
     __tablename__ = "core_audit_events"
+    __table_args__ = (UniqueConstraint("id", "scope_id"),)
     operation: Mapped[str] = mapped_column(String(160))
     command_key: Mapped[str] = mapped_column(String(128))
 
 
 class Outbox(Row):
     __tablename__ = "core_outbox"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["event_id", "scope_id"], ["core_audit_events.id", "core_audit_events.scope_id"]
+        ),
+    )
     event_id: Mapped[UUID] = mapped_column(ForeignKey("core_audit_events.id"), unique=True)
     event_type: Mapped[str] = mapped_column(String(160))
     status: Mapped[str] = mapped_column(String(16), default="pending")

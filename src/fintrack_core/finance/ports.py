@@ -19,6 +19,13 @@ class Repository(Reader, Protocol):
     def save(self, identifier: str, version: int, changes: Data) -> Data: ...
 
 
+class LedgerReader(Protocol):
+    def cashflow(self, month: str, currency: str) -> Data: ...
+    def balances(self, currency: str) -> Data: ...
+    def summary(self, month: str, currency: str) -> Data: ...
+    def visible_transactions(self, start: str, end: str, currency: str) -> list[Data]: ...
+
+
 @dataclass(frozen=True)
 class ReadRepositories:
     accounts: Reader
@@ -30,6 +37,7 @@ class ReadRepositories:
     budgets: Reader
     recurring: Reader
     profile: Reader
+    ledger: LedgerReader
 
 
 @dataclass(frozen=True)

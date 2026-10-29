@@ -8,13 +8,19 @@ from datetime import UTC, date, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import CursorResult, Date, Uuid, inspect, select, text, update
+from sqlalchemy import CursorResult, Date, Uuid, case, func, inspect, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from fintrack_core.finance import models as m
-from fintrack_core.finance.domain import Data, DomainError, require
+from fintrack_core.finance.domain import (
+    MAX_MINOR,
+    Data,
+    DomainError,
+    require,
+    shift_month,
+)
 from fintrack_core.finance.ports import ReadRepositories, Repositories
 
 # Fixed server-owned development scope; never accepted from a request or identity claim.
@@ -123,26 +129,190 @@ class SqlRepository:
         return self.get(identifier)
 
 
+class SqlLedger:
+    """Analytical ledger queries and cashflow summaries."""
+
+    def __init__(self, db: Session, scope: UUID) -> None:
+        self.db = db
+        self.scope = scope
+
+    def visible_transactions(self, start: str, end: str, currency: str) -> list[Data]:
+        query = (
+            select(m.Transaction)
+            .join(
+                m.Account,
+                (m.Transaction.account_id == m.Account.id)
+                & (m.Transaction.scope_id == m.Account.scope_id),
+            )
+            .where(
+                m.Transaction.scope_id == self.scope,
+                m.Transaction.currency == currency,
+                m.Account.hidden.is_(False),
+                m.Transaction.booked_on >= date.fromisoformat(start),
+                m.Transaction.booked_on <= date.fromisoformat(end),
+            )
+            .order_by(m.Transaction.id)
+            .limit(10001)
+        )
+        rows = list(self.db.scalars(query))
+        require(len(rows) <= 10000, "Transaction report limit exceeded.")
+        repo = SqlRepository(self.db, m.Transaction, self.scope)
+        return [repo._data(row) for row in rows]
+
+    def cashflow(self, month: str, currency: str) -> Data:
+        start_date = date.fromisoformat(f"{month}-01")
+        next_month = shift_month(month, 1)
+        end_date = date.fromisoformat(f"{next_month}-01")
+
+        query = (
+            select(m.Transaction)
+            .join(
+                m.Account,
+                (m.Transaction.account_id == m.Account.id)
+                & (m.Transaction.scope_id == m.Account.scope_id),
+            )
+            .where(
+                m.Transaction.scope_id == self.scope,
+                m.Transaction.currency == currency,
+                m.Account.hidden.is_(False),
+                m.Transaction.booked_on >= start_date,
+                m.Transaction.booked_on < end_date,
+                m.Transaction.hidden.is_(False),
+                m.Transaction.deleted.is_(False),
+                m.Transaction.pending.is_(False),
+            )
+            .limit(10001)
+        )
+        rows = list(self.db.scalars(query))
+        require(len(rows) <= 10000, "Transaction report limit exceeded.")
+
+        income = expense = 0
+        categories: dict[str, int] = {}
+        for item in rows:
+            if item.kind == "income":
+                income += item.amount_minor * (1 if item.direction == "in" else -1)
+            elif item.kind == "expense":
+                sign = 1 if item.direction == "out" else -1
+                if item.splits:
+                    for part in item.splits:
+                        amt = sign * int(part["amount_minor"])
+                        expense += amt
+                        cat_key = (
+                            str(part.get("category_id"))
+                            if part.get("category_id")
+                            else "uncategorized"
+                        )
+                        categories[cat_key] = categories.get(cat_key, 0) + amt
+                else:
+                    amt = sign * item.amount_minor
+                    expense += amt
+                    cat_key = str(item.category_id) if item.category_id else "uncategorized"
+                    categories[cat_key] = categories.get(cat_key, 0) + amt
+
+        agg_values = [income, expense, income - expense, *categories.values()]
+        require(
+            all(abs(v) <= MAX_MINOR for v in agg_values),
+            "Aggregated amount exceeds the supported JSON integer range.",
+        )
+        return {
+            "income_minor": income,
+            "expense_minor": expense,
+            "net_minor": income - expense,
+            "by_category": categories,
+        }
+
+    def balances(self, currency: str) -> Data:
+        stmt = select(
+            func.coalesce(
+                func.sum(case((m.Account.is_asset.is_(True), m.Account.balance_minor), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(case((m.Account.is_asset.is_(False), m.Account.balance_minor), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            m.Account.kind.in_(("cash", "checking", "savings", "mfs")),
+                            m.Account.balance_minor,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ),
+            func.coalesce(
+                func.sum(case((m.Account.kind == "dps", m.Account.balance_minor), else_=0)), 0
+            ),
+        ).where(
+            m.Account.scope_id == self.scope,
+            m.Account.currency == currency,
+            m.Account.hidden.is_(False),
+            m.Account.archived.is_(False),
+        )
+        row = self.db.execute(stmt).one()
+        assets, debt, spendable, committed = int(row[0]), int(row[1]), int(row[2]), int(row[3])
+        require(
+            all(
+                abs(v) <= MAX_MINOR
+                for v in [
+                    assets,
+                    debt,
+                    spendable,
+                    committed,
+                    assets - debt,
+                    spendable + committed - debt,
+                ]
+            ),
+            "Aggregate balance exceeds JSON integer range.",
+        )
+        return {
+            "assets_minor": assets,
+            "liabilities_minor": debt,
+            "net_worth_minor": assets - debt,
+            "spendable_minor": spendable,
+            "committed_minor": committed,
+            "liquid_net_minor": spendable + committed - debt,
+        }
+
+    def summary(self, month: str, currency: str) -> Data:
+        cashflow = self.cashflow(month, currency)
+        bal = self.balances(currency)
+        return {
+            "month": month,
+            "currency": currency,
+            "policy_version": "dev-v1",
+            "cashflow": cashflow,
+            "assets_minor": bal["assets_minor"],
+            "liabilities_minor": bal["liabilities_minor"],
+            "net_worth_minor": bal["net_worth_minor"],
+            "spendable_minor": bal["spendable_minor"],
+            "committed_minor": bal["committed_minor"],
+            "liquid_net_minor": bal["liquid_net_minor"],
+            "computed_on": date.today().isoformat(),
+            "balance_history_available": False,
+            "balance_basis": "observations; transaction edits do not alter observed balances",
+        }
+
+
 class SqlUnitOfWork:
     def __init__(self, db: Session, fingerprint_key: str, scope: UUID = DEV_SCOPE) -> None:
         self.db, self.scope = db, scope
         db.info["workspace_scope"] = str(scope)
         self.fingerprint_key = fingerprint_key.encode()
         self.repositories = Repositories(
-            *[
-                SqlRepository(db, model, scope)
-                for model in (
-                    m.Account,
-                    m.Observation,
-                    m.Category,
-                    m.Group,
-                    m.Transaction,
-                    m.Rule,
-                    m.Budget,
-                    m.Recurring,
-                    m.Workspace,
-                )
-            ]
+            accounts=SqlRepository(db, m.Account, scope),
+            observations=SqlRepository(db, m.Observation, scope),
+            categories=SqlRepository(db, m.Category, scope),
+            groups=SqlRepository(db, m.Group, scope),
+            transactions=SqlRepository(db, m.Transaction, scope),
+            rules=SqlRepository(db, m.Rule, scope),
+            budgets=SqlRepository(db, m.Budget, scope),
+            recurring=SqlRepository(db, m.Recurring, scope),
+            profile=SqlRepository(db, m.Workspace, scope),
+            ledger=SqlLedger(db, scope),
         )
 
     def ready(self) -> Data:

@@ -11,6 +11,42 @@ TOKEN = "synthetic-advisor-token-" + "x" * 32
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
+def test_private_analysis_rejects_identity_and_invalid_financial_fields():
+    body = {
+        "schemaVersion": 1,
+        "intent": "cashflow",
+        "currency": "BDT",
+        "month": "2026-10",
+        "values": {"incomeMinor": 20000, "expenseMinor": 25000},
+    }
+    with TestClient(create_app(Settings(_env_file=None, dev_api_key=SecretStr(TOKEN)))) as client:
+        assert client.post("/v1/agent/analysis", json=body).status_code == 401
+        response = client.post("/v1/agent/analysis", headers=AUTH, json=body)
+        assert response.status_code == 200
+        assert (
+            response.json()["data"]["answer"]
+            == "Your recorded cash flow for 2026-10 is -BDT 50.00."
+        )
+        assert (
+            client.post(
+                "/v1/agent/analysis", headers=AUTH, json={**body, "name": "Alice"}
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/v1/agent/analysis", headers=AUTH, json={**body, "values": {"incomeMinor": 20}}
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/v1/agent/analysis", headers=AUTH, json={**body, "currency": "ALI"}
+            ).status_code
+            == 422
+        )
+
+
 def test_graph_routes_tool_and_isolates_requests():
     with TestClient(create_app(Settings(_env_file=None, dev_api_key=SecretStr(TOKEN)))) as client:
         assert client.get("/health/live").status_code == 200

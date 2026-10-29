@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     auth_database_url: SecretStr | None = None
     migration_database_url: SecretStr | None = None
     neon_auth_url: str | None = None
+    advisor_service_url: str | None = None
+    advisor_service_key: SecretStr | None = None
     command_fingerprint_key: SecretStr | None = None
     enable_development_routes: bool = False
+    # Opt-in IDs of synthetic Neon Auth records for local directory testing.
+    directory_test_user_ids: list[str] = []
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]

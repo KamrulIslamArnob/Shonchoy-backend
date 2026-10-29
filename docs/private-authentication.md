@@ -26,9 +26,11 @@ Set the private backend `.env`:
 - `FINTRACK_NEON_AUTH_URL`: exact managed endpoint configured in the mobile app.
 - `FINTRACK_AUTH_DATABASE_URL`: optional private connection to the authentication
   branch when it differs from the finance branch. Leave unset for a shared branch.
-  Its restricted role needs only schema usage and SELECT on `neon_auth.session`
-  columns `id`, `userId`, and `expiresAt`. Configure that role on the auth branch;
-  finance runtime grants alone do not grant access to another branch.
+  Its restricted role needs schema usage and SELECT on `neon_auth.session`
+  columns `id`, `userId`, and `expiresAt`. The authenticated user-directory lookup
+  also needs SELECT on `neon_auth."user"` columns `id`, `name`, `email`, and
+  `emailVerified`. Configure those grants on the authentication database; finance
+  runtime grants alone do not grant access to another branch.
 - `FINTRACK_COMMAND_FINGERPRINT_KEY`: private random secret of at least 32 characters.
 - `FINTRACK_DATABASE_URL`: pooled PostgreSQL URL for the restricted runtime role.
 - `FINTRACK_MIGRATION_DATABASE_URL`: direct PostgreSQL URL for the migration role.
@@ -41,6 +43,9 @@ security. Run `scripts/configure_private_runtime.sql` as the database owner, set
 that role's password privately (`\password shonchoy_runtime` in psql), and use it
 for the runtime URL. The runtime must not own tables, be superuser, or bypass RLS.
 It receives read-only access to the managed session table's three required columns.
+The user-directory endpoint only returns name, email, and identity for verified
+accounts, excludes the requesting user, and caps each search at 20 results. The
+runtime role's directory grants do not include credentials or session tokens.
 
 Revision `d17e5a30c9b4` was missing from this checkout. Its membership-table DDL
 has been recovered from the deployed schema, and the private-user migration now

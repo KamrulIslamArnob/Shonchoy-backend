@@ -77,23 +77,16 @@ def verify_token(base_url: str | None, token: str) -> dict[str, Any]:
         raise HTTPException(401, "A valid signed-in session is required.") from None
 
 
-def authenticated_access(
+def authenticated_identity(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-    db: Annotated[Session, Depends(session)],
     auth_db: Annotated[Session, Depends(auth_session)],
     session_id: Annotated[str | None, Header(alias="X-Neon-Session-Id", max_length=255)] = None,
-) -> None:
+) -> dict[str, Any]:
     if not credentials or not session_id:
         raise HTTPException(401, "A valid signed-in session is required.")
     settings = request.app.state.settings
     claims = verify_token(settings.neon_auth_url, credentials.credentials)
-    fingerprint_key = settings.command_fingerprint_key
-    if fingerprint_key is None or len(fingerprint_key.get_secret_value()) < 32:
-        raise HTTPException(503, "Private workspace commands are not configured.")
-    # Stable across devices and simultaneous first-login requests, isolated across auth issuers.
-    scope = uuid5(NAMESPACE_URL, f"shonchoy:{claims['iss']}:{claims['sub']}")
-    db.info["workspace_scope"] = str(scope)
     with auth_db.begin():
         active = auth_db.scalar(
             select(managed_sessions.c.id).where(
@@ -104,12 +97,26 @@ def authenticated_access(
         )
         if active is None:
             raise HTTPException(401, "Your session has ended. Sign in again.")
+    request.state.auth_subject = claims["sub"]
+    return claims
+
+
+def authenticated_access(
+    request: Request,
+    db: Annotated[Session, Depends(session)],
+    claims: Annotated[dict[str, Any], Depends(authenticated_identity)],
+) -> None:
+    fingerprint_key = request.app.state.settings.command_fingerprint_key
+    if fingerprint_key is None or len(fingerprint_key.get_secret_value()) < 32:
+        raise HTTPException(503, "Private workspace commands are not configured.")
+    # Stable across devices and simultaneous first-login requests, isolated across auth issuers.
+    scope = uuid5(NAMESPACE_URL, f"shonchoy:{claims['iss']}:{claims['sub']}")
+    db.info["workspace_scope"] = str(scope)
     with db.begin():
         insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
         request.state.core_scope_id = str(scope)
         # These inserts commit together. No existing/shared workspace can be claimed by a client.
         name = str(claims.get("name") or "Your workspace")[:120]
-        request.state.auth_subject = claims["sub"]
         db.execute(insert(Workspace).values(id=scope, name=name).on_conflict_do_nothing())
         db.execute(
             insert(AppUser)

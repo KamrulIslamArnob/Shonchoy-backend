@@ -5,10 +5,12 @@ from threading import BoundedSemaphore
 from fastapi import FastAPI
 
 from fintrack_common.api import make_app
+from fintrack_core.advisor_rate_limit import AdvisorRateLimiter
 from fintrack_core.config import Settings
 from fintrack_core.database import build_engine
 from fintrack_core.feedback.api import admin_router as feedback_admin_router
 from fintrack_core.feedback.api import public_router as feedback_router
+from fintrack_core.finance.api import directory_router
 from fintrack_core.finance.api import router as core_router
 from fintrack_core.routes import router
 
@@ -38,8 +40,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.router.lifespan_context = lifespan
     app.state.settings = config
     app.state.core_capacity = BoundedSemaphore(8)
+    app.state.advisor_rate_limiter = AdvisorRateLimiter()
     app.include_router(router)
     app.include_router(core_router)
+    app.include_router(directory_router)
     app.include_router(feedback_router)
     app.include_router(feedback_admin_router)
     return app

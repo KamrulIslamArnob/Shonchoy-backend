@@ -18,6 +18,8 @@ DO $$ BEGIN
 END $$;
 GRANT USAGE ON SCHEMA public, neon_auth TO shonchoy_runtime;
 GRANT SELECT (id, "userId", "expiresAt") ON neon_auth.session TO shonchoy_runtime;
+-- The authenticated user directory exposes only these profile fields.
+GRANT SELECT (id, name, email, "emailVerified") ON neon_auth."user" TO shonchoy_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   core_users, core_workspaces, core_accounts, core_balance_observations,
   core_category_groups, core_categories, core_transactions, core_rules,
